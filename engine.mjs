@@ -120,9 +120,8 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'PLACE') {
     const d = state.districts.find((x) => x.id === action.district);
     if (!d || d.owner !== null) throw new Error('district unavailable');
-    // ESCALATING COST: your Nth token on a district costs N influence. This is
-    // what removes "always place" dominance -- committing to one district gets
-    // expensive, so spreading out, drawing, and card timing all stay live.
+    // Flat cost. Dominance is removed by DRAW being the only influence source
+    // and by cards costing 1 influence to play, so tempo is never free.
     const already = d.tokens[p.id] || 0;
     const cost = 1;
     if (p.influence < cost) throw new Error('not enough influence for that placement');

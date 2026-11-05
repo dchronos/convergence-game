@@ -87,7 +87,7 @@ function expireStale(state) {
   if (state.turnWho !== p.id) { state.turnStartedAt = now; state.turnWho = p.id; return; }
   if (now - state.turnStartedAt > TURN_MS) {
     const acts = legalActions(state);
-    const mv = acts.find((a) => a.type === 'PASS') || acts.find((a) => a.type === 'DRAW') || acts[0];
+    const mv = acts.find((a) => a.type === 'DRAW') || acts[0];
     if (mv) applyAction(state, p.id, mv);
     state.turnStartedAt = Date.now();
     state.turnWho = currentPlayer(state)?.id || null;
