@@ -46,7 +46,8 @@ function choose(view) {
   const tax = legal.find((a) => a.type === 'PLAY' && a.card === 'TAX');
   if (tax && leader && leader.id !== playerId && leader.influence >= 5) return tax;
   const surge = legal.find((a) => a.type === 'PLAY' && a.card === 'SURGE');
-  if (me.influence < 4) return legal.find((a) => a.type === 'DRAW');
+  // Territory is the only thing that scores. Legal PLACE actions already
+  // account for the increasing expansion cost, so take ground whenever possible.
   const open = places.sort((a, b) => a.need - b.need || b.district.threshold - a.district.threshold)[0];
   if (open) return open.action;
   if (surge) return surge;

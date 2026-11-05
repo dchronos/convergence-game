@@ -12,15 +12,16 @@ Play as an agent: **one HTTP/JSON API, one token.**
 
 Eight districts sit on the board, each needing a fixed number of influence tokens
 (the district's *threshold*, 2 to 5) before it can be won. On your turn you take
-exactly one action: **PLACE** (spend 1 influence to put one token on a district),
-**DRAW** (take a card into your hand, up to 5), or **PLAY** a card (costs 1
-influence). A district is won the moment one player alone has placed its threshold
+exactly one action: **PLACE** (spend influence to put one token on a district; opening each two
+additional districts raises the cost by 1), **DRAW** (take a card into your hand,
+up to 5), or **PLAY** a card (costs 1 influence). A district is won the moment one player alone has placed its threshold
 there; rival tokens on that district are lost with it. Districts are therefore **contests, not purchases**:
 committing early starts a race you may not win, and ignoring a district lets an
 opponent walk in. Every fourth round the district with the fewest tokens is
 **demolished**. The match ends when every district is resolved or round 14 ends.
-**Score = thresholds of districts you won + 2 per card remaining + your influence.**
-Highest score wins; ties break on district thresholds, then influence.
+**Score = 100 per district won + that district's threshold.** Only territory
+scores; unspent influence breaks ties after committed tokens, so hoarding never
+beats taking ground.
 
 ### The four cards
 
@@ -35,18 +36,35 @@ Playing a card costs 1 influence, so tempo is never free. Each card is
 single-use. That is the whole game: you are always choosing between board
 position now and resources later, and the right answer changes as rivals commit.
 
-**Balance is measured, not asserted.** In a round-robin of four scripted
-archetypes over 150 games, no archetype is unbeaten: *draw-and-sit* beats
-*place-always* 50-0, *place-always* beats *SURGE-first* 39-11, and the reference
-bot beats all three (127 wins). A pure turtle wins by hoarding, the bot punishes
-it, and an early rusher runs out of influence.
+**Balance is measured, not asserted.** Four scripted archetypes, round robin,
+100 seeded games per pairing (300 games), on the shipped engine:
+
+| Archetype | Behaviour | Wins /300 |
+|---|---|---|
+| turtle | draw every turn | 0 |
+| always-place | cheapest open district, every turn | 100 |
+| spread | develop districts already started | 241 |
+| reference bot | conditional play | 259 |
+
+The two viable lines are close and split their head-to-head 59-41, so neither is
+a dominant answer. The naive rush loses all 200 games it plays against them, and
+pure economy loses all 300 it plays. In 100 seeded four-player bot games there
+were zero draws, 5.0 of 8 districts resolved, and matches ran about 12 rounds.
+These are outcomes of these specific seeded policies, not a proof of perfect
+balance. Reproduce them:
+
+```sh
+node verify-balance.mjs        # 100 games per pairing, plus a 4-player shape check
+node verify-balance.mjs 20     # faster smoke run
+```
 
 ---
 
 ## Play in a browser
 
-Open the game URL, type a name, pick 2-4 seats, **Create match**. Empty seats are
-filled by bots. Share the 6-character **match code** and a friend joins with it.
+Open the GitHub Pages URL, type a name, pick 2-4 seats, **Start match**. This is
+a client-only solo build; the networked server build supports humans and agents
+in shared lobbies. Empty seats are filled by bots. Share the 6-character **match code** and a friend joins with it.
 
 ---
 
@@ -91,8 +109,8 @@ The state contains everything you need:
 | `you` | your player id |
 | `districts[]` | `id`, `name`, `threshold`, `owner`, `tokens` (per-player counts), `leader` |
 | `players[]` | `id`, `name`, `kind` (`human`/`agent`/`bot`), `influence`, `handCount`, `shield`, and `hand` **only for you** |
-| `scores[]` | live score breakdown, highest first |
-| `legal[]` | the exact actions you may submit right now |
+| `scores[]` | live score, highest first: `districtsWon`, `districtPoints`, `tokensPlaced`, `influence` |
+| `legal[]` | the exact actions you may submit right now; each `PLACE` carries its current `cost`, which rises as you hold more districts |
 | `log[]` | every event, in order — this is the replay |
 
 If `legal` is empty it is not your turn. Poll `GET` until `turn` equals your id.
@@ -114,6 +132,10 @@ Legal action shapes:
 {"type":"PLAY","card":"SURGE"}
 ```
 
+A `PLACE` costs whatever `cost` the matching `legal` entry reports — never assume
+1. Submitting without checking `legal` is the most common way an agent gets a
+`400`.
+
 The response is the full new state. An illegal move returns `400` with an `error`
 string **and** the current `legal` list — read it and try again; nothing changes on
 failure.
@@ -130,9 +152,10 @@ live server:
 node sample-bot.mjs http://127.0.0.1:8787 MyBot 4
 ```
 
-It finishes a district it is closest to, contests districts it leads, fires TAX at
-rivals about to win, and draws for influence when it is short. Use it as the
-starting point for anything smarter.
+It finishes districts one token from completion, contests districts it leads,
+fires TAX at an influence leader, and only draws when nothing is placeable.
+It reads every `cost` from `legal`, so it never overpays after expanding. Use it
+as the starting point for anything smarter.
 
 ---
 
@@ -151,7 +174,9 @@ No dependencies. Node 18+.
 engine.mjs        pure rules + scoring + sample bot (no I/O, seeded, testable)
 server.mjs        zero-dependency HTTP server: browser client + agent API
 public/index.html browser client (vanilla JS, no build step)
+docs/             static single-player build served by GitHub Pages
 sample-bot.mjs    documented reference agent
+verify-balance.mjs reproduces the balance table above
 ```
 
 ## Design decisions

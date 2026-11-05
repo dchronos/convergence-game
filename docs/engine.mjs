@@ -95,9 +95,10 @@ export function legalActions(state) {
   if (state.over) return [];
   const p = currentPlayer(state);
   const acts = [];
+  const owned = state.districts.filter((x) => x.owner === p.id).length;
   for (const d of state.districts) {
     if (d.owner !== null) continue;
-    const cost = 1;
+    const cost = 1 + Math.floor(owned / 2);
     if (cost <= p.influence) acts.push({ type: 'PLACE', district: d.id, cost });
   }
   acts.push({ type: 'DRAW' });
@@ -120,10 +121,13 @@ export function applyAction(state, playerId, action) {
   if (action.type === 'PLACE') {
     const d = state.districts.find((x) => x.id === action.district);
     if (!d || d.owner !== null) throw new Error('district unavailable');
-    // Flat cost. Dominance is removed by DRAW being the only influence source
-    // and by cards costing 1 influence to play, so tempo is never free.
+    // OVEREXTENSION: your (owned/2 + 1)th district raises the price of opening
+    // another. Drawn influence is the only income, so wide play has to be paid
+    // for out of a finite pool -- which is what kills "always place, cheapest
+    // first" as a dominant line while leaving develop-or-expand a real choice.
     const already = d.tokens[p.id] || 0;
-    const cost = 1;
+    const owned = state.districts.filter((x) => x.owner === p.id).length;
+    const cost = 1 + Math.floor(owned / 2);
     if (p.influence < cost) throw new Error('not enough influence for that placement');
     p.influence -= cost;
     d.tokens[p.id] = already + 1;
@@ -189,15 +193,12 @@ function advance(state) {
   if (open === 0 || state.round > MAX_ROUNDS) {
     state.over = true;
     const scores = score(state);
-    // Tiebreak, in order: score, districts won, influence held. Only a perfect
-    // tie on all three is a draw.
-    const best = [...scores].sort((a, b) =>
-      b.score - a.score ||
-      b.districtPoints - a.districtPoints ||
-      b.influence - a.influence)[0];
+    // Tiebreak, in order: ground score, tokens committed, influence held. Only
+    // a perfect tie on all three is a draw.
+    const best = scores[0];
     const tied = scores.filter((s) =>
       s.score === best.score &&
-      s.districtPoints === best.districtPoints &&
+      s.tokensPlaced === best.tokensPlaced &&
       s.influence === best.influence);
     state.winner = tied.length === 1 ? best.id : null;
     push(state, `match over — ${scores.map((s) => `${s.name}:${s.score}`).join(', ')}` +
@@ -210,18 +211,25 @@ export function score(state) {
     .map((p) => {
       const won = state.districts.filter((d) => d.owner === p.id);
       const districtPoints = won.reduce((s, d) => s + d.threshold, 0);
-      const cardBonus = p.hand.length * 2;
+      // Only ground scores. Held cards and unspent influence are not points:
+      // paying them rewards never contesting, which is the opposite of the
+      // decision the game exists to test. More districts beats richer
+      // districts; thresholds then separate equal counts.
       return {
         id: p.id,
         name: p.name,
         owned: won.map((d) => d.id),
+        districtsWon: won.length,
         districtPoints,
-        cardBonus,
+        tokensPlaced: state.districts.reduce((sum, d) => sum + (d.tokens[p.id] || 0), 0),
         influence: p.influence,
-        score: districtPoints + cardBonus + p.influence,
+        score: won.length * 100 + districtPoints,
       };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) =>
+      b.score - a.score ||
+      b.tokensPlaced - a.tokensPlaced ||
+      b.influence - a.influence);
 }
 
 // Documented sample bot. One meaningful rule: finish a district you have the most
@@ -242,10 +250,11 @@ export function sampleBotMove(state, playerId) {
     return { a, d, mine, rivals, need: d.threshold - mine, prize: d.threshold };
   });
 
-  // 1. Complete a district: closest to threshold and uncontested enough to finish.
-  const finishing = scored.filter((s) => s.need <= p.influence)
+  // 1. Finish a district we can afford to close now. Taking ground is what
+  //    scores, so one token from completion is always worth the influence.
+  const finishing = scored.filter((s) => s.need <= p.influence && s.need <= 1)
     .sort((x, y) => y.prize - x.prize || x.need - y.need)[0];
-  if (finishing && finishing.need <= 1) return finishing.a;
+  if (finishing) return finishing.a;
 
   // 2. Contest a district we already lead.
   const leading = scored.filter((s) => s.mine > s.rivals && s.mine > 0 && s.need <= 1)
@@ -258,13 +267,12 @@ export function sampleBotMove(state, playerId) {
     Object.entries(d.tokens).some(([k, v]) => k !== p.id && v >= d.threshold - 1));
   if (tax && rivalClose) return tax;
 
-  // 4. Otherwise build influence.
+  // 4. Otherwise take ground: smallest remaining gap, richest prize on a tie.
+  //    Drawing while districts sit open is how a bot loses a match it could
+  //    have contested, so it only draws when nothing is placeable.
   const draw = acts.find((a) => a.type === 'DRAW');
-  if (draw && p.influence < 4) return draw;
-
-  // 5. Open a fresh district with the smallest remaining gap.
   const fresh = scored.sort((x, y) => x.need - y.need || y.prize - x.prize)[0];
-  if (fresh && p.influence > 0) return fresh.a;
+  if (fresh) return fresh.a;
   return draw || acts[0];
 }
 

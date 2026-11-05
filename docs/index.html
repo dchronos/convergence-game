@@ -200,7 +200,9 @@ function render(v) {
   document.getElementById('roundInfo').textContent = me ? ('influence ' + me.influence) : '';
   document.getElementById('codeInfo').textContent = 'solo';
 
-  const placeable = new Set(v.legal.filter(a => a.type === 'PLACE').map(a => a.district));
+  const placeCost = new Map(v.legal.filter(a => a.type === 'PLACE')
+    .map(a => [a.district, a.cost]));
+  const placeable = new Set(placeCost.keys());
   document.getElementById('districts').innerHTML = v.districts.map(d => {
     const owner = v.players.find(p => p.id === d.owner);
     const idx = owner ? v.players.findIndex(p => p.id === owner.id) : -1;
@@ -219,7 +221,7 @@ function render(v) {
     while (pips.length < d.threshold) pips.push('<span class="pip empty"></span>');
     const label = d.owner === 'demolished' ? 'demolished'
       : owner ? owner.name + ' holds it'
-      : placeable.has(d.id) ? 'place (1 influence)' : 'open';
+      : placeable.has(d.id) ? 'place (' + placeCost.get(d.id) + ' influence)' : 'open';
     return '<div class="' + cls.join(' ') + '"' +
       (placeable.has(d.id) ? ' onclick="sendMove({type:\'PLACE\',district:\'' + d.id + '\'})"' : '') + '>' +
       '<div class="dval">' + d.threshold + '</div>' +
@@ -248,8 +250,7 @@ function render(v) {
 
   document.getElementById('scores').innerHTML =
     '<tr><th>Player</th><th>Districts</th><th>Score</th></tr>' +
-    v.scores.map(s => '<tr><td>' + s.name + '</td><td>' + s.districtPoints +
-      ' + ' + s.cardBonus + ' + ' + s.influence + '</td><td>' + s.score + '</td></tr>').join('');
+    v.scores.map(s => '<tr><td>' + s.name + '</td><td>' + s.districtsWon + ' (' + s.districtPoints + ' pts) · ' + s.tokensPlaced + ' tokens</td><td>' + s.score + '</td></tr>').join('');
 
   const log = document.getElementById('log');
   log.innerHTML = v.log.map(l => '<div><span class="r">R' + l.round + '</span> ' + l.text + '</div>').join('');
