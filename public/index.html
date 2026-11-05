@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONVERGENCE — claim the board</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --fg: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --success: #3fb950; --warning: #d29922; --error: #f85149;
+    --c1: #58a6ff; --c2: #3fb950; --c3: #d29922; --c4: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: .08em; }
+  .sub { color: var(--muted); margin-bottom: 16px; }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  .grid { display: grid; grid-template-columns: 1fr 320px; gap: 16px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .panel + .panel { margin-top: 12px; }
+  .districts { display: grid; gap: 8px; }
+  .district {
+    display: flex; align-items: center; gap: 12px; padding: 12px;
+    border: 1px solid var(--border); border-radius: 6px; background: #0d1117;
+    transition: border-color .15s, transform .15s;
+  }
+  .district.buyable { border-color: var(--accent); cursor: pointer; }
+  .district.buyable:hover { transform: translateX(2px); border-color: var(--success); }
+  .district.taken { opacity: .55; }
+  .dval {
+    width: 34px; height: 34px; display: grid; place-items: center;
+    border-radius: 50%; font-weight: 700; background: var(--border); flex: 0 0 auto;
+  }
+  .dname { flex: 1; font-weight: 600; }
+  .downer { font-size: 12px; color: var(--muted); }
+  .players { display: grid; gap: 6px; margin-bottom: 12px; }
+  .player { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+  .tag { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .turn { color: var(--success); font-weight: 700; }
+  button {
+    font: inherit; padding: 8px 14px; border-radius: 6px; cursor: pointer;
+    background: var(--accent); color: #04121f; border: 1px solid transparent; font-weight: 600;
+  }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.ghost { background: transparent; color: var(--fg); border-color: var(--border); }
+  .pips { display: flex; gap: 3px; margin-top: 4px; }
+  .pip { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .pip.empty { background: transparent; border: 1px solid var(--border); }
+  .cards { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .card {
+    padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: #0d1117; font-size: 12px; font-weight: 700; letter-spacing: .04em; cursor: pointer;
+  }
+  .card:hover { border-color: var(--warning); }
+  .log { max-height: 220px; overflow-y: auto; font-size: 12px; color: var(--muted); font-family: ui-monospace, monospace; }
+  .log div { padding: 1px 0; }
+  .log .r { color: var(--border); }
+  .banner { padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; font-weight: 600; }
+  .banner.go { background: rgba(63,185,80,.12); border: 1px solid var(--success); }
+  .banner.wait { background: rgba(210,153,34,.10); border: 1px solid var(--warning); }
+  .banner.over { background: rgba(88,166,255,.12); border: 1px solid var(--accent); }
+  code { background: #0d1117; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  a { color: var(--accent); }
+  .seat { font-size: 12px; color: var(--muted); }
+  .scores { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .scores th, .scores td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  .scores td:last-child, .scores th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>CONVERGENCE</h1>
+  <div class="sub">Claim districts. Burn cards. Highest score takes the board.</div>
+
+  <div id="joinPanel">
+    <div class="panel">
+      <h2 style="font-size:15px;margin:0 0 10px">Start a match</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="pname" placeholder="your name" value="Player"
+               style="padding:8px;border-radius:6px;border:1px solid var(--border);background:#0d1117;color:var(--fg)">
+        <select id="pcount" style="padding:8px;border-radius:6px;border:1px solid var(--border);background:#0d1117;color:var(--fg)">
+          <option value="2">2 players</option>
+          <option value="3">3 players</option>
+          <option value="4">4 players</option>
+        </select>
+        <button onclick="startGame()">Create match</button>
+        <span style="color:var(--muted)">or</span>
+        <input id="jcode" placeholder="match code" maxlength="6"
+               style="width:120px;padding:8px;border-radius:6px;border:1px solid var(--border);background:#0d1117;color:var(--fg);text-transform:uppercase">
+        <button class="ghost" onclick="joinGame()">Join match</button>
+      </div>
+      <p class="seat" style="margin:12px 0 0">
+        Empty seats are filled by bots. Agents join with
+        <code>POST /api/agent/join</code> — see the <a href="/README.md">API docs</a>.
+      </p>
+    </div>
+  </div>
+
+  <div id="gamePanel" style="display:none">
+    <div class="grid">
+      <div>
+        <div id="banner" class="banner"></div>
+        <div class="panel">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
+            <strong>Districts</strong>
+            <span class="seat" id="roundInfo"></span>
+            <span class="seat" style="margin-left:auto" id="codeInfo"></span>
+          </div>
+          <div class="districts" id="districts"></div>
+        </div>
+        <div class="panel">
+          <strong>Your hand</strong>
+          <div class="cards" id="hand"></div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="drawBtn" onclick="sendMove({type:'DRAW'})">Draw a card</button>
+            <button class="ghost" onclick="sendMove({type:'PASS'})" id="passBtn">Pass</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="panel">
+          <strong>Players</strong>
+          <div class="players" id="players" style="margin-top:8px"></div>
+          <table class="scores" id="scores"></table>
+        </div>
+        <div class="panel">
+          <strong>Match log</strong>
+          <div class="log" id="log" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let CODE = null, TOKEN = null, ME = null, VIEW = null, poll = null;
+
+const COLORS = ['--c1', '--c2', '--c3', '--c4'];
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    ...opts,
+    headers: {
+      'content-type': 'application/json',
+      ...(TOKEN ? { authorization: 'Bearer ' + TOKEN } : {}),
+      ...(opts.headers || {}),
+    },
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+  return d;
+}
+
+async function startGame() {
+  const name = document.getElementById('pname').value || 'Player';
+  const players = Number(document.getElementById('pcount').value);
+  try {
+    const d = await api('/api/games', { method: 'POST', body: JSON.stringify({ name, players }) });
+    CODE = d.code; TOKEN = d.token; ME = d.playerId;
+    enterGame(d.view);
+  } catch (e) { alert(e.message); }
+}
+
+async function joinGame() {
+  const c = document.getElementById('jcode').value.trim().toUpperCase();
+  const name = document.getElementById('pname').value || 'Player';
+  try {
+    const d = await api('/api/games/' + c + '/join', { method: 'POST', body: JSON.stringify({ name }) });
+    CODE = d.code; TOKEN = d.token; ME = d.playerId;
+    enterGame(d.view);
+  } catch (e) { alert(e.message); }
+}
+
+function enterGame(view) {
+  document.getElementById('joinPanel').style.display = 'none';
+  document.getElementById('gamePanel').style.display = '';
+  render(view);
+  if (poll) clearInterval(poll);
+  poll = setInterval(refresh, 1500);
+}
+
+async function refresh() {
+  if (!CODE) return;
+  try { render(await api('/api/games/' + CODE)); } catch (e) { /* keep last view */ }
+}
+
+async function sendMove(move) {
+  try {
+    const v = await api('/api/games/' + CODE + '/move', { method: 'POST', body: JSON.stringify(move) });
+    render(v);
+  } catch (e) {
+    render(await api('/api/games/' + CODE));
+  }
+}
+
+function render(v) {
+  VIEW = v;
+  const myTurn = !v.over && v.turn === ME;
+  const me = v.players.find(p => p.id === ME);
+  const banner = document.getElementById('banner');
+
+  if (v.over) {
+    const w = v.scores[0];
+    banner.className = 'banner over';
+    banner.textContent = 'Match over — ' + (v.winner ? v.scores.find(s => s.id === v.winner).name + ' wins' : 'draw') +
+      ' · final ' + w.name + ' ' + w.score;
+  } else if (myTurn) {
+    banner.className = 'banner go';
+    banner.textContent = 'Your move — round ' + v.round + ' of ' + v.maxRounds;
+  } else {
+    const t = v.players.find(p => p.id === v.turn);
+    banner.className = 'banner wait';
+    banner.textContent = 'Waiting on ' + (t ? t.name : '?') + ' — round ' + v.round + ' of ' + v.maxRounds;
+  }
+
+  document.getElementById('roundInfo').textContent = me ? ('influence ' + me.influence) : '';
+  document.getElementById('codeInfo').textContent = 'code ' + v.id;
+
+  const placeable = new Set(v.legal.filter(a => a.type === 'PLACE').map(a => a.district));
+  document.getElementById('districts').innerHTML = v.districts.map(d => {
+    const owner = v.players.find(p => p.id === d.owner);
+    const idx = owner ? v.players.findIndex(p => p.id === owner.id) : -1;
+    const col = idx >= 0 ? 'var(' + COLORS[idx % 4] + ')' : 'var(--muted)';
+    const cls = ['district'];
+    if (d.owner) cls.push('taken');
+    if (placeable.has(d.id)) cls.push('buyable');
+    // pip row: one pip per token, coloured by owner
+    const pips = [];
+    for (const pl of v.players) {
+      const n = (d.tokens && d.tokens[pl.id]) || 0;
+      for (let i = 0; i < n; i++) {
+        pips.push('<span class="pip" style="background:var(' + COLORS[v.players.findIndex(x => x.id === pl.id) % 4] + ')"></span>');
+      }
+    }
+    while (pips.length < d.threshold) pips.push('<span class="pip empty"></span>');
+    const label = d.owner === 'demolished' ? 'demolished'
+      : owner ? owner.name + ' holds it'
+      : placeable.has(d.id) ? 'place (1 influence)' : 'open';
+    return '<div class="' + cls.join(' ') + '"' +
+      (placeable.has(d.id) ? ' onclick="sendMove({type:\'PLACE\',district:\'' + d.id + '\'})"' : '') + '>' +
+      '<div class="dval">' + d.threshold + '</div>' +
+      '<div style="flex:1"><div class="dname">' + d.name + '</div>' +
+      '<div class="pips">' + pips.join('') + '</div></div>' +
+      '<div class="downer" style="color:' + col + '">' + label + '</div></div>';
+  }).join('');
+
+  const hand = (me && me.hand) || [];
+  document.getElementById('hand').innerHTML = hand.length
+    ? hand.map((c, i) => '<div class="card" onclick="sendMove({type:\'PLAY\',card:\'' + c + '\'})">' +
+        c + '</div>').join('')
+    : '<span class="seat">empty</span>';
+  document.getElementById('drawBtn').disabled = !myTurn;
+  document.getElementById('passBtn').disabled = !myTurn;
+
+  document.getElementById('players').innerHTML = v.players.map((p, i) => {
+    const active = (!v.over && p.id === v.turn) ? ' turn' : '';
+    const you = p.id === ME ? ' (you)' : '';
+    const kind = p.kind === 'bot' ? ' · bot' : p.kind === 'agent' ? ' · agent' : '';
+    return '<div class="player' + active + '">' +
+      '<span class="dot" style="background:var(' + COLORS[i % 4] + ')"></span>' +
+      '<span>' + p.name + you + '<span class="seat">' + kind + '</span></span>' +
+      '<span class="tag">' + p.influence + ' infl · ' + p.handCount + ' cards' +
+      (p.shield ? ' · shielded' : '') + '</span></div>';
+  }).join('');
+
+  document.getElementById('scores').innerHTML =
+    '<tr><th>Player</th><th>Districts</th><th>Score</th></tr>' +
+    v.scores.map(s => '<tr><td>' + s.name + '</td><td>' + s.districtPoints +
+      ' + ' + s.cardBonus + ' + ' + s.influence + '</td><td>' + s.score + '</td></tr>').join('');
+
+  const log = document.getElementById('log');
+  log.innerHTML = v.log.map(l => '<div><span class="r">R' + l.round + '</span> ' + l.text + '</div>').join('');
+  log.scrollTop = log.scrollHeight;
+}
+</script>
+</body>
+</html>
